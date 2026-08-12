@@ -14,6 +14,7 @@ load_dotenv()
 
 model = init_chat_model(model="gemini-3.5-flash-lite", model_provider="google_genai")
 
+
 @tool
 def calculate(expression: str) -> str:
     """Calculate a mathematical expression. Example: calculate('2 + 2')"""
@@ -23,31 +24,33 @@ def calculate(expression: str) -> str:
     except Exception as e:
         return f"Error calculating: {e}"
 
+
 @tool
 def get_weather(city: str) -> str:
-    """ Get the current weather for a city."""
+    """Get the current weather for a city."""
 
     # Simulate the current weather for a city
 
     weather_data = {
         "new_york": "72F Sunny",
         "london": "65F Cloudy",
-        "tokyo": "78F Humid", 
-        "paris": "65F, Partly Cloudy"
+        "tokyo": "78F Humid",
+        "paris": "65F, Partly Cloudy",
     }
     city_lower = city.lower()
     if city_lower in weather_data:
         return f"Weather in {city}: {weather_data[city_lower]}"
     return f"Weather data not available for {city}"
 
-@tool   
+
+@tool
 def search_web(query: str) -> str:
-    """ Search the web for a query."""
-    
+    """Search the web for a query."""
+
     search_results = {
         "python programming": "Python is a high-level programming language known for its versatality",
         "latest news": "Today's top news: AI continues to advance , impacting various industry",
-        "best restaurants in new york": "Top restaurants in New York include Le Bernardin"
+        "best restaurants in new york": "Top restaurants in New York include Le Bernardin",
     }
     query_lower = query.lower()
     if query_lower in search_results:
@@ -58,11 +61,12 @@ def search_web(query: str) -> str:
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
+
 def create_tool_agent():
     """Create a basic tool-calling agent."""
 
     tools = [calculate, get_weather, search_web]
-    model_with_tools = model.bind_tools(tools) # this is the secret!
+    model_with_tools = model.bind_tools(tools)  # this is the secret!
 
     def agent_node(state: AgentState) -> str:
         # Generate a response usning the LLM with tool access
@@ -70,7 +74,7 @@ def create_tool_agent():
         return {"messages": [response]}
 
     def should_continue(state: AgentState) -> Literal["tools", "end"]:
-        """ Check if we should continue to tools or end. """
+        """Check if we should continue to tools or end."""
         last_message = state["messages"][-1]
 
         # If no tool calls, we are done
@@ -78,8 +82,8 @@ def create_tool_agent():
             return "end"
 
         return "tools"
-    
-    #Create the tool node
+
+    # Create the tool node
     tool_node = ToolNode(tools)
 
     # create the graph
@@ -89,27 +93,22 @@ def create_tool_agent():
 
     workflow.add_edge(START, "agent")
     workflow.add_conditional_edges(
-        "agent",
-        should_continue,
-        {
-            "tools": "tools",
-            "end": END
-        }
+        "agent", should_continue, {"tools": "tools", "end": END}
     )
     workflow.add_edge("tools", "agent")
-    
 
     return workflow.compile()
+
 
 def calling_tool_agent():
     """Demo the tool-calling agent"""
 
     agent = create_tool_agent()
-    
+
     queries = [
         "What's 25*19? ",
         "What is the weather in Tokyo ",
-        "What's 100/4 and what's the weather in London?"
+        "What's 100/4 and what's the weather in London?",
     ]
 
     print("Tool-calling Agent")
@@ -121,17 +120,24 @@ def calling_tool_agent():
         print(f"Total Messages: {len(response['messages'])}")
         print("=" * 40)
 
+
 def tool_execution_trace():
     """Show detailed tool execution trace."""
 
     agent = create_tool_agent()
     print("\n Too l Execution Trace:\n")
 
-    result = agent.invoke({
-        "messages": [HumanMessage(content="Calculate 15% of 300 and check the weather in Paris")]
-    })
+    result = agent.invoke(
+        {
+            "messages": [
+                HumanMessage(
+                    content="Calculate 15% of 300 and check the weather in Paris"
+                )
+            ]
+        }
+    )
 
-    for i,msg in enumerate(result["messages"]):
+    for i, msg in enumerate(result["messages"]):
         print(f"Step {i+1} ({type(msg).__name__}): ")
         if isinstance(msg, HumanMessage):
             print(f"  content: {msg.content}")
@@ -146,5 +152,6 @@ def tool_execution_trace():
             print(f" Tool: {msg.name}")
             print(f" Result: {msg.content}")
         print("-" * 40)
+
 
 tool_execution_trace()
