@@ -7,7 +7,7 @@ One agent coordinates multiple specialist agents
 
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage, SystemMessage
-from langchain_core.prompts import ChatMessagePromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from typing_extensions import TypedDict, Annotated
 from langgraph.graph.message import add_messages
 from typing import Literal
@@ -29,7 +29,7 @@ def create_supervisor_system():
     """Create a supervisor with specialist agents"""
     
     model = init_chat_model(model_provider="google_genai", model="gemini-3.5-flash-lite")
-    
+
     class RouteDecision(BaseModel):
         next: Literal["researcher", "writer", "critic", "FINISH"] = Field(description="The next agent to call, or FINISH if task ifs complete")
         reasoning: str = Field(description="Reason for the routing decision")
@@ -70,21 +70,20 @@ def create_supervisor_system():
 
     # Define specialist agents (For Demo purposes, they just echo the task)
     def researcher(state: SuperVisorState) -> dict:
-        prompt = ChatMessagePromptTemplate.from_messages(
+        prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", "You are a research specialist. Gather facts and information relevant to the topic"),
                 ("human", "Task Context: \n{context}\n\n Provide your research findings.")
             ]
         )
         task = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
-
         response = model.invoke(prompt.format_messages(context=task))
         return {
-            "messages": AIMessage(content=f"[Researcher]: {response.content[0].get('text')}")
+            "messages": [HumanMessage(content=f"[Researcher]: {response.content[0].get('text')}")]
         }
     
     def writer(state: SuperVisorState) -> dict:
-        prompt = ChatMessagePromptTemplate.format_messages([
+        prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a writing specialist. Create clear and concise content based on the provided context."),
             ("human", "Previous work:\n{context}\n\nWrite a polished version of this content.")
         ])
@@ -92,13 +91,10 @@ def create_supervisor_system():
         task = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
         response = model.invoke(prompt.format_messages(context=task))
         return {
-            "messages": AIMessage(content=f"[Writer]: {response.content[0].get('text')}")
+            "messages": [HumanMessage(content=f"[Writer]: {response.content[0].get('text')}")]
         }
-
-    
-    
     def critic(state: SuperVisorState) -> dict:
-        prompt = ChatMessagePromptTemplate.format_messages([
+        prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a critic. Review the following content for accuracy, clarity, and improvements."),
             ("human", "Content to review:\n{context}\n\nProvide your critique and suggestions for improvement.")
         ])
@@ -106,14 +102,14 @@ def create_supervisor_system():
         context = "\n".join([m.content for m in state["messages"][-3:]])
         response = model.invoke(prompt.format_messages(context=context))
         return {
-            "messages": AIMessage(content=f"[Critic]: {response.content[0].get('text')}")
+            "messages": [HumanMessage(content=f"[Critic]: {response.content[0].get('text')}")]
         }
 
     def finalize(state: SuperVisorState) -> dict:
         #Get the last substantial response
 
         for msg in reversed(state["messages"]):
-            if isinstance(msg, AIMessage) and "[Writer]" in msg.content:
+            if isinstance(msg, HumanMessage) and "[Writer]" in msg.content:
                 content = msg.content.replace("[Writer]: ", "")
                 return {
                     "final_response": content
@@ -123,8 +119,8 @@ def create_supervisor_system():
         }
     
     def route_to_agent(state: SuperVisorState) -> dict:
-        if state.get("task_complete"):
-            return "finalize"
+        if state.get("task_completed"):
+            return "FINISH"
         return state["next_agent"]
 
     
@@ -168,7 +164,7 @@ def run_supervisor():
         response = graph.invoke({
             "messages": [HumanMessage(content=task)],
             "next_agent": "",
-            "task_complete": False,
+            "task_completed": False,
             "final_response": ""  
         })
         print(f"\nFinal Response: {response['final_response']}")
