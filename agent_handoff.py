@@ -1,24 +1,36 @@
-"""
-agent Handoffs in LangGraph
-Passing control and context between agents
+"""Agent Handoff Pattern in LangGraph.
+
+This module demonstrates dynamic agent handoffs in a multi-agent customer service
+system. Control and context are dynamically delegated from an initial Triage Agent
+to domain specialists (Sales, Support, Billing) based on structured LLM decisions.
 """
 
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
-from typing_extensions import TypedDict, Annotated
 from typing import Literal
-from pydantic import BaseModel, Field
 import operator
 from dotenv import load_dotenv
+
 from langchain.chat_models import init_chat_model
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict, Annotated
 
 load_dotenv()
 
+# Initialize the chat model using Google GenAI provider
 model = init_chat_model(model="gemini-3.5-flash-lite", model_provider="google_genai")
 
 
 class HandoffState(TypedDict):
+    """State dictionary for tracking handoff execution context.
+
+    Attributes:
+        messages: Accumulated conversation messages between user and agents.
+        current_agent: Name of the currently active agent or target handoff agent.
+        handoff_reason: Reason provided by triage for delegating to specialist.
+        context_summary: Key context notes passed along to the next agent.
+    """
     messages: Annotated[list[BaseMessage], add_messages]
     current_agent: str
     handoff_reason: str
@@ -26,17 +38,34 @@ class HandoffState(TypedDict):
 
 
 class HandoffDecision(BaseModel):
+    """Structured Pydantic decision schema output by the triage routing LLM."""
     handoff_to: Literal["sales", "support", "billing", "stay", "end"] = Field(
-        description="Which agent to hand off to"
+        description="Which specialist agent to hand off control to."
     )
-    reason: str = Field(descritpion="Reason for handoff")
-    context: str = Field(description="key onctext to pass to next agent")
+    reason: str = Field(
+        description="Reason for handing off the conversation."
+    )
+    context: str = Field(
+        description="Key context and background summary to pass to the next agent."
+    )
 
 
 def create_customer_service_system():
+    """Builds and compiles the customer service agent handoff StateGraph workflow.
+
+    Returns:
+        CompiledStateGraph: A compiled LangGraph workflow ready for execution.
+    """
 
     def triage_agent(state: HandoffState) -> HandoffState:
-        """Initial triage to route customers"""
+        """Initial contact agent that routes customer queries to appropriate specialists.
+
+        Args:
+            state: Current HandoffState dictionary.
+
+        Returns:
+            Updated state dict with next agent target, reason, and context.
+        """
         system = """
             You are the initial contact for our customer service system.
             Your goal is to quickly understand the customer's issue and route them to the correct agent.
@@ -55,7 +84,7 @@ def create_customer_service_system():
             response = model.invoke(
                 [
                     SystemMessage(
-                        content="Provide a brief ,helpful response to the customer"
+                        content="Provide a brief, helpful response to the customer."
                     ),
                     *state["messages"],
                 ]
@@ -76,15 +105,21 @@ def create_customer_service_system():
             ],
         }
 
-    def sales_agent(state: HandoffState):
-        """Sales Specialist"""
+    def sales_agent(state: HandoffState) -> dict:
+        """Sales Specialist agent handling purchasing and pricing queries.
 
+        Args:
+            state: Current HandoffState dictionary.
+
+        Returns:
+            Dict containing specialist response message and agent status.
+        """
         system = f"""
             You are a sales specialist. Context from the triage: {state.get("context_summary")}
             
-            Your goal is to help customer interested in purchasing our product.
+            Your goal is to help customers interested in purchasing our product.
             Answer sales related questions, provide demos and pricing information.
-            Your are not authorized to provide technical or billing information.
+            You are not authorized to provide technical or billing information.
         """
 
         response = model.invoke([SystemMessage(content=system), *state["messages"]])
@@ -94,10 +129,16 @@ def create_customer_service_system():
             "current_agent": "sales_complete",
         }
 
-    def billing_agent(state: HandoffState):
-        """Billing Agents"""
+    def billing_agent(state: HandoffState) -> dict:
+        """Billing Specialist agent handling invoices and subscriptions.
 
-        system = """
+        Args:
+            state: Current HandoffState dictionary.
+
+        Returns:
+            Dict containing specialist response message and agent status.
+        """
+        system = f"""
             You are a billing specialist. Context from the triage: {state.get("context_summary")}
 
             Your goal is to help customers with billing related questions.
@@ -111,10 +152,16 @@ def create_customer_service_system():
             "current_agent": "billing_complete",
         }
 
-    def support_agent(state: HandoffState):
-        """Support Agents"""
+    def support_agent(state: HandoffState) -> dict:
+        """Technical Support Specialist agent handling bugs and technical issues.
 
-        system = """
+        Args:
+            state: Current HandoffState dictionary.
+
+        Returns:
+            Dict containing specialist response message and agent status.
+        """
+        system = f"""
             You are a support specialist. Context from the triage: {state.get("context_summary")}
 
             Your goal is to help customers with technical issues.
@@ -128,8 +175,15 @@ def create_customer_service_system():
             "current_agent": "support_complete",
         }
 
-    def route_from_triage(state: HandoffState):
-        """Router from triage to appropriate agent"""
+    def route_from_triage(state: HandoffState) -> str:
+        """Conditional routing logic directing flow from triage to target agent.
+
+        Args:
+            state: Current HandoffState dictionary.
+
+        Returns:
+            Name of the next node to transition to.
+        """
         current_agent = state["current_agent"]
         if current_agent in ["sales", "support", "billing"]:
             return current_agent
@@ -166,7 +220,7 @@ def create_customer_service_system():
 
 
 def handoff_function():
-    """Demo customer service handoffs"""
+    """Executes demo customer service queries using the agent handoff system."""
 
     agent = create_customer_service_system()
     print("Customer Service handoff Demo:\n")
@@ -174,7 +228,7 @@ def handoff_function():
     queries = [
         "My app keeps crashing when I try to upload photos",
         "I want to upgrade to the premium plan",
-        "I was charged tweice for my subscription",
+        "I was charged twice for my subscription",
         "What time do you close?",
     ]
 
@@ -196,4 +250,6 @@ def handoff_function():
         print("-" * 50)
 
 
-handoff_function()
+if __name__ == "__main__":
+    handoff_function()
+
