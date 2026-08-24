@@ -29,6 +29,7 @@ class SuperVisorState(TypedDict):
         task_completed: Boolean flag indicating if the overall task is finalized.
         final_response: Polished output response extracted upon task completion.
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
     next_agent: str
     task_completed: bool
@@ -48,6 +49,7 @@ def create_supervisor_system():
 
     class RouteDecision(BaseModel):
         """Structured routing decision schema produced by the supervisor agent."""
+
         next: Literal["researcher", "writer", "critic", "FINISH"] = Field(
             description="The next specialist agent to invoke, or FINISH if task is complete."
         )
@@ -106,12 +108,12 @@ def create_supervisor_system():
             (m.content for m in state["messages"] if isinstance(m, HumanMessage)), ""
         )
         response = model.invoke(prompt.format_messages(context=task))
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
-        return {
-            "messages": [
-                HumanMessage(content=f"[Researcher]: {content_text}")
-            ]
-        }
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
+        return {"messages": [HumanMessage(content=f"[Researcher]: {content_text}")]}
 
     def writer(state: SuperVisorState) -> dict:
         """Writing specialist node that crafts polished draft content."""
@@ -132,12 +134,12 @@ def create_supervisor_system():
             (m.content for m in state["messages"] if isinstance(m, HumanMessage)), ""
         )
         response = model.invoke(prompt.format_messages(context=task))
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
-        return {
-            "messages": [
-                HumanMessage(content=f"[Writer]: {content_text}")
-            ]
-        }
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
+        return {"messages": [HumanMessage(content=f"[Writer]: {content_text}")]}
 
     def critic(state: SuperVisorState) -> dict:
         """Critic specialist node that reviews draft content for quality improvements."""
@@ -156,12 +158,12 @@ def create_supervisor_system():
 
         context = "\n".join([str(m.content) for m in state["messages"][-3:]])
         response = model.invoke(prompt.format_messages(context=context))
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
-        return {
-            "messages": [
-                HumanMessage(content=f"[Critic]: {content_text}")
-            ]
-        }
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
+        return {"messages": [HumanMessage(content=f"[Critic]: {content_text}")]}
 
     def finalize(state: SuperVisorState) -> dict:
         """Finalization node extracting the completed writer response."""
@@ -234,4 +236,3 @@ def run_supervisor():
 
 if __name__ == "__main__":
     run_supervisor()
-

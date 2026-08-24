@@ -31,6 +31,7 @@ class HandoffState(TypedDict):
         handoff_reason: Reason provided by triage for delegating to specialist.
         context_summary: Key context notes passed along to the next agent.
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
     current_agent: str
     handoff_reason: str
@@ -39,12 +40,11 @@ class HandoffState(TypedDict):
 
 class HandoffDecision(BaseModel):
     """Structured Pydantic decision schema output by the triage routing LLM."""
+
     handoff_to: Literal["sales", "support", "billing", "stay", "end"] = Field(
         description="Which specialist agent to hand off control to."
     )
-    reason: str = Field(
-        description="Reason for handing off the conversation."
-    )
+    reason: str = Field(description="Reason for handing off the conversation.")
     context: str = Field(
         description="Key context and background summary to pass to the next agent."
     )
@@ -252,4 +252,3 @@ def handoff_function():
 
 if __name__ == "__main__":
     handoff_function()
-

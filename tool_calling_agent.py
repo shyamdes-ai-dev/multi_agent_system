@@ -89,6 +89,7 @@ class AgentState(TypedDict):
     Attributes:
         messages: Sequence of conversation messages accumulated between agent and tools.
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
 
 
@@ -147,9 +148,13 @@ def calling_tool_agent():
     for query in queries:
         print(f"Query: {query}")
         response = agent.invoke({"messages": [HumanMessage(content=query)]})
-        last_msg_content = response['messages'][-1].content
-        if isinstance(last_msg_content, list) and len(last_msg_content) > 0 and isinstance(last_msg_content[0], dict):
-            text_out = last_msg_content[0].get('text', str(last_msg_content))
+        last_msg_content = response["messages"][-1].content
+        if (
+            isinstance(last_msg_content, list)
+            and len(last_msg_content) > 0
+            and isinstance(last_msg_content[0], dict)
+        ):
+            text_out = last_msg_content[0].get("text", str(last_msg_content))
         else:
             text_out = str(last_msg_content)
         print(f"Final response: {text_out}")
@@ -191,4 +196,3 @@ def tool_execution_trace():
 
 if __name__ == "__main__":
     tool_execution_trace()
-

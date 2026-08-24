@@ -31,6 +31,7 @@ class ParallelState(TypedDict):
         technical_result: Technical information from the technical research agent.
         final_synthesis: Integrated synthesis of all three perspectives.
     """
+
     query: str
     research_result: str
     creative_result: str
@@ -47,38 +48,62 @@ def create_parallel_research():
 
     def research_agent(state: ParallelState) -> dict:
         """Academic research node for gathering factual and academic information."""
-        response = model.invoke([
-            SystemMessage(content="""
+        response = model.invoke(
+            [
+                SystemMessage(content="""
                 You are an academic Researcher.
                 Gather information, facts, and academic context.
             """),
-            HumanMessage(content=f"Query: {state['query']}\nProvide detailed research on this topic.")
-        ])
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+                HumanMessage(
+                    content=f"Query: {state['query']}\nProvide detailed research on this topic."
+                ),
+            ]
+        )
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {"research_result": content_text}
 
     def creative_agent(state: ParallelState) -> dict:
         """Creative research node for generating novel concepts and creative ideas."""
-        response = model.invoke([
-            SystemMessage(content="""
+        response = model.invoke(
+            [
+                SystemMessage(content="""
                 You are a creative researcher.
                 Gather creative ideas, design concepts, and novel angles.
             """),
-            HumanMessage(content=f"Query: {state['query']}\nProvide detailed creative research on this topic.")
-        ])
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+                HumanMessage(
+                    content=f"Query: {state['query']}\nProvide detailed creative research on this topic."
+                ),
+            ]
+        )
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {"creative_result": content_text}
 
     def technical_agent(state: ParallelState) -> dict:
         """Technical research node for gathering technical specifications and implementation details."""
-        response = model.invoke([
-            SystemMessage(content="""
+        response = model.invoke(
+            [
+                SystemMessage(content="""
                 You are a technical researcher.
                 Gather technical information, architecture details, and technical facts.
             """),
-            HumanMessage(content=f"Query: {state['query']}\nProvide detailed technical research on this topic.")
-        ])
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+                HumanMessage(
+                    content=f"Query: {state['query']}\nProvide detailed technical research on this topic."
+                ),
+            ]
+        )
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {"technical_result": content_text}
 
     def synthesize(state: ParallelState) -> dict:
@@ -92,11 +117,19 @@ TECHNICAL: {state['technical_result']}
 Create a unified, well-structured response.
 """
 
-        response = model.invoke([
-            SystemMessage(content="You are an expert synthesizer. Combine multiple perspectives coherently."),
-            HumanMessage(content=synthesis_prompt)
-        ])
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+        response = model.invoke(
+            [
+                SystemMessage(
+                    content="You are an expert synthesizer. Combine multiple perspectives coherently."
+                ),
+                HumanMessage(content=synthesis_prompt),
+            ]
+        )
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {"final_synthesis": content_text}
 
     graph = StateGraph(ParallelState)
@@ -124,9 +157,9 @@ Create a unified, well-structured response.
 def run_parallel_research():
     """Executes the parallel research workflow demo."""
     print("Starting parallel agents...")
-    
+
     graph = create_parallel_research()
-    
+
     query = "What are the latest AI trends and their business implications?"
     print(f"\nQuery: {query}")
 
@@ -151,6 +184,7 @@ class MapReduceState(TypedDict):
         summaries: Individual document summaries output by the map phase.
         final_summary: Combined master summary output by the reduce phase.
     """
+
     documents: list[str]
     summaries: list[str]
     final_summary: str
@@ -167,23 +201,41 @@ def create_map_reduce_summarizer():
         """Map step: Summarizes each document individually."""
         summaries = []
         for doc in state["documents"]:
-            response = model.invoke([
-                SystemMessage(content="You are a helpful assistant that summarizes in 2 lines without markdown."),
-                HumanMessage(content=f"Summarize this document:\n\n{doc}")
-            ])
-            content_text = response.content if isinstance(response.content, str) else str(response.content)
+            response = model.invoke(
+                [
+                    SystemMessage(
+                        content="You are a helpful assistant that summarizes in 2 lines without markdown."
+                    ),
+                    HumanMessage(content=f"Summarize this document:\n\n{doc}"),
+                ]
+            )
+            content_text = (
+                response.content
+                if isinstance(response.content, str)
+                else str(response.content)
+            )
             summaries.append(content_text)
-            
+
         return {"summaries": summaries}
-        
-    def reduce_combine(state: MapReduceState) -> dict: 
+
+    def reduce_combine(state: MapReduceState) -> dict:
         """Reduce step: Combines all individual document summaries into a final master summary."""
-        all_summaries = "\n\n".join([f"Summary {i+1}: {s}" for i, s in enumerate(state['summaries'])])
-        response = model.invoke([
-            SystemMessage(content="You are a helpful assistant that combines multiple summaries into one coherent summary without markdown."),
-            HumanMessage(content=f"Combine these summaries:\n\n{all_summaries}")
-        ])
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+        all_summaries = "\n\n".join(
+            [f"Summary {i+1}: {s}" for i, s in enumerate(state["summaries"])]
+        )
+        response = model.invoke(
+            [
+                SystemMessage(
+                    content="You are a helpful assistant that combines multiple summaries into one coherent summary without markdown."
+                ),
+                HumanMessage(content=f"Combine these summaries:\n\n{all_summaries}"),
+            ]
+        )
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {"final_summary": content_text}
 
     graph = StateGraph(MapReduceState)
@@ -211,19 +263,13 @@ if __name__ == "__main__":
         "Java is an object-oriented language known for its performance and scalability.",
         "C++ is a high-performance language known for its efficiency.",
         "JavaScript is a programming language used for web development.",
-        "Go is a programming language used for system programming."
+        "Go is a programming language used for system programming.",
     ]
-    response = agent.invoke({
-        "documents": documents, 
-        "summaries": [], 
-        "final_summary": ""
-    })
+    response = agent.invoke(
+        {"documents": documents, "summaries": [], "final_summary": ""}
+    )
 
     print("\n" + "=" * 50)
     print("MAP REDUCE RESULTS")
     print("=" * 50)
     print(f"\nFINAL SUMMARY:\n{response['final_summary']}")
-
-
-    
-
