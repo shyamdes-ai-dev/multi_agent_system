@@ -28,6 +28,7 @@ class MessagePassingState(TypedDict):
         messages: Accumulated conversation message trace passed across pipeline stages.
         current_phase: Current phase string tracking pipeline progression.
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
     current_phase: str
 
@@ -38,46 +39,75 @@ def create_message_passing_pipeline():
     Returns:
         CompiledStateGraph: A compiled LangGraph workflow for sequential message passing.
     """
+
     def researcher(state: MessagePassingState) -> dict:
         """Researches the prompt topic and posts findings into message history."""
         response = model.invoke(
             [
-                SystemMessage(content="You are a helpful assistant that researches topics. Read the user's question and provide your findings in 2-3 sentences."),
-                *state['messages']
+                SystemMessage(
+                    content="You are a helpful assistant that researches topics. Read the user's question and provide your findings in 2-3 sentences."
+                ),
+                *state["messages"],
             ]
         )
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {
-            "messages": [HumanMessage(content=f"[Researcher]: {content_text}", name="researcher")],
-            "current_phase": "fact_checker"
+            "messages": [
+                HumanMessage(content=f"[Researcher]: {content_text}", name="researcher")
+            ],
+            "current_phase": "fact_checker",
         }
 
     def fact_checker(state: MessagePassingState) -> dict:
         """Verifies findings from message history and posts fact-check conclusions."""
         response = model.invoke(
             [
-                SystemMessage(content="You are a helpful assistant that checks facts. Read the user's question and research findings, then verify their accuracy in 2-3 sentences."),
-                *state['messages']
+                SystemMessage(
+                    content="You are a helpful assistant that checks facts. Read the user's question and research findings, then verify their accuracy in 2-3 sentences."
+                ),
+                *state["messages"],
             ]
         )
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {
-            "messages": [HumanMessage(content=f"[Fact Checker]: {content_text}", name="fact_checker")],
-            "current_phase": "summarizer"
+            "messages": [
+                HumanMessage(
+                    content=f"[Fact Checker]: {content_text}", name="fact_checker"
+                )
+            ],
+            "current_phase": "summarizer",
         }
-    
+
     def summarizer(state: MessagePassingState) -> dict:
         """Summarizes research and fact-check findings into a concise report."""
         response = model.invoke(
             [
-                SystemMessage(content="You are a helpful assistant that synthesizes past messages into a clear summary report."),
-                *state['messages']
+                SystemMessage(
+                    content="You are a helpful assistant that synthesizes past messages into a clear summary report."
+                ),
+                *state["messages"],
             ]
         )
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         return {
-            "messages": [HumanMessage(content=f"[Summarized Report]: {content_text}", name="summarizer")],
-            "current_phase": "done"
+            "messages": [
+                HumanMessage(
+                    content=f"[Summarized Report]: {content_text}", name="summarizer"
+                )
+            ],
+            "current_phase": "done",
         }
 
     graph = StateGraph(MessagePassingState)
@@ -97,11 +127,18 @@ def message_passing_demo():
     """Executes a demonstration of the message-passing pipeline workflow."""
     print("=== Message Passing Demo ===")
     workflow = create_message_passing_pipeline()
-    inputs = {"messages": [HumanMessage(content="What are the main benefits of artificial intelligence in healthcare?")], "current_phase": "start"}
+    inputs = {
+        "messages": [
+            HumanMessage(
+                content="What are the main benefits of artificial intelligence in healthcare?"
+            )
+        ],
+        "current_phase": "start",
+    }
     final_state = workflow.invoke(inputs)
 
     print("\n--- Pipeline Message Trace ---")
-    for msg in final_state['messages']:
+    for msg in final_state["messages"]:
         print(f"\n{msg.content}")
 
 

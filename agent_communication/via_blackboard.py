@@ -35,6 +35,7 @@ class BlackBoardState(TypedDict):
         iteration: Current loop iteration counter.
         is_approved: Boolean indicating whether the draft meets quality standards.
     """
+
     messages: Annotated[list[BaseMessage], add_messages]
     topic: str
     drafts: Annotated[list[str], operator.add]
@@ -55,6 +56,7 @@ def create_blackboard_system(max_iterations: int = 3):
 
     class ApprovalDecision(BaseModel):
         """Structured decision output from the critic agent."""
+
         approved: bool = Field(description="Whether the content is approved.")
         feedback: str = Field(description="Feedback for improvement if not approved.")
 
@@ -71,47 +73,77 @@ def create_blackboard_system(max_iterations: int = 3):
             context_parts.append(f"Feedback to address:\n{state['critiques'][-1]}")
 
         context = "\n\n".join(context_parts)
-        response = model.invoke([
-            SystemMessage(content=(
-                "You are a skilled writer. Write or revise a concise, high-quality paragraph "
-                "(3-4 sentences) based on the topic and any feedback provided. "
-                "If feedback exists, directly address all points in your revision."
-            )),
-            HumanMessage(content=context)
-        ])
+        response = model.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "You are a skilled writer. Write or revise a concise, high-quality paragraph "
+                        "(3-4 sentences) based on the topic and any feedback provided. "
+                        "If feedback exists, directly address all points in your revision."
+                    )
+                ),
+                HumanMessage(content=context),
+            ]
+        )
 
-        content_text = response.content if isinstance(response.content, str) else str(response.content)
+        content_text = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
 
         return {
             "drafts": [content_text],
-            "messages": [HumanMessage(content=f"[Drafter] Iteration {current_iteration + 1}:\n{content_text}", name="drafter")],
-            "iteration": current_iteration + 1
+            "messages": [
+                HumanMessage(
+                    content=f"[Drafter] Iteration {current_iteration + 1}:\n{content_text}",
+                    name="drafter",
+                )
+            ],
+            "iteration": current_iteration + 1,
         }
 
     def critic(state: BlackBoardState) -> dict:
         """Reviews the latest draft on the blackboard and provides structured feedback."""
-        latest_draft = state["drafts"][-1] if state.get("drafts") else "No draft available."
+        latest_draft = (
+            state["drafts"][-1] if state.get("drafts") else "No draft available."
+        )
 
-        decision = critic_llm.invoke([
-            SystemMessage(content=(
-                "You are a critical editor. Review the latest draft and decide:\n"
-                "- Is it clear, compelling, and well-written?\n"
-                "- Does it address the topic and any past feedback?\n"
-                "- Should it be approved or returned for revision?"
-            )),
-            HumanMessage(content=f"Topic: {state['topic']}\nLatest Draft:\n{latest_draft}")
-        ])
+        decision = critic_llm.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "You are a critical editor. Review the latest draft and decide:\n"
+                        "- Is it clear, compelling, and well-written?\n"
+                        "- Does it address the topic and any past feedback?\n"
+                        "- Should it be approved or returned for revision?"
+                    )
+                ),
+                HumanMessage(
+                    content=f"Topic: {state['topic']}\nLatest Draft:\n{latest_draft}"
+                ),
+            ]
+        )
 
         if decision.approved:
             return {
                 "is_approved": True,
-                "messages": [HumanMessage(content=f"[Critic] Approved! Final Draft:\n{latest_draft}", name="critic")]
+                "messages": [
+                    HumanMessage(
+                        content=f"[Critic] Approved! Final Draft:\n{latest_draft}",
+                        name="critic",
+                    )
+                ],
             }
         else:
             return {
                 "is_approved": False,
                 "critiques": [decision.feedback],
-                "messages": [HumanMessage(content=f"[Critic] Feedback: {decision.feedback}", name="critic")]
+                "messages": [
+                    HumanMessage(
+                        content=f"[Critic] Feedback: {decision.feedback}", name="critic"
+                    )
+                ],
             }
 
     def decide_continue(state: BlackBoardState) -> str:
@@ -132,7 +164,7 @@ def create_blackboard_system(max_iterations: int = 3):
         {
             "drafter": "drafter",
             "end": END,
-        }
+        },
     )
 
     return graph.compile()
@@ -142,7 +174,7 @@ def blackboard_demo():
     """Executes a demonstration of the Blackboard pattern with Drafter and Critic."""
     print("=== Blackboard Communication Pattern Demo ===")
     workflow = create_blackboard_system(max_iterations=3)
-    
+
     topic = "The importance of artificial intelligence ethics in modern software development"
     print(f"Topic: {topic}\n")
 
@@ -168,11 +200,3 @@ def blackboard_demo():
 
 if __name__ == "__main__":
     blackboard_demo()
-
-                
-        
-
-
-    
-
-
