@@ -87,9 +87,9 @@ def create_blackboard_system(max_iterations: int = 3):
         )
 
         content_text = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
+            response.content[0].get("text")
+            if isinstance(response.content[0].get("text"), str)
+            else str(response.content[0].get("text"))
         )
 
         return {
