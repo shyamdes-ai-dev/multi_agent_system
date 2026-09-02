@@ -12,13 +12,18 @@ from dotenv import load_dotenv
 import json
 
 load_dotenv()
-model = init_chat_model(model_provider="google_genai", model="gemini-2.5-flash-lite", temperature=0)
-creative_llm = init_chat_model(model_provider="google_genai", model="gemini-2.5-flash-lite", temperature=0.7)
+model = init_chat_model(
+    model_provider="google_genai", model="gemini-2.5-flash-lite", temperature=0
+)
+creative_llm = init_chat_model(
+    model_provider="google_genai", model="gemini-2.5-flash-lite", temperature=0.7
+)
 
 
 # ======================================
 # State Schema
 # ======================================
+
 
 class ResearchState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
@@ -42,13 +47,18 @@ class SearchTaskState(TypedDict):
 # Node: Supervisor - Plans the research
 # ======================================
 
-def supervisor(state: ResearchState) -> dict:
-    """ Plans research by generating targeted search queries."""
 
-    response = model.invoke([
-        SystemMessage(content="You are a research supervisor. Given a topic, generate exactly 3 specific search queries that will cover different angles of the topic. Return ONLY a JSON array of strings. No markdwon formatting"),
-        HumanMessage(content=f"Research topic: {state['topic']}")
-    ])
+def supervisor(state: ResearchState) -> dict:
+    """Plans research by generating targeted search queries."""
+
+    response = model.invoke(
+        [
+            SystemMessage(
+                content="You are a research supervisor. Given a topic, generate exactly 3 specific search queries that will cover different angles of the topic. Return ONLY a JSON array of strings. No markdwon formatting"
+            ),
+            HumanMessage(content=f"Research topic: {state['topic']}"),
+        ]
+    )
 
     try:
         queries = json.loads(response.content[0].get("text"))
@@ -57,12 +67,15 @@ def supervisor(state: ResearchState) -> dict:
         queries = [
             f"{state['topic']} overview",
             f"{state['topic']} latest developments",
-            f"{state['topic']} practical applications"
+            f"{state['topic']} practical applications",
         ]
 
     return {
         "search_queries": queries[:3],
-        "messages" : [
-            AIMessage(content=f"[SUPERVISOR]: Planned {len(queries)} search queries: {queries}", name="supervisor")
-        ]
+        "messages": [
+            AIMessage(
+                content=f"[SUPERVISOR]: Planned {len(queries)} search queries: {queries}",
+                name="supervisor",
+            )
+        ],
     }
