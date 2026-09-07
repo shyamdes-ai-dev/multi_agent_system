@@ -1,97 +1,136 @@
-from langchain_core.messages import BaseMessage, AIMessage, SystemMessage, HumanMessage
+"""Hierarchical Multi-Agent System Architecture in LangGraph.
+
+This module demonstrates a multi-level hierarchical agent organization:
+1. Top-Level Supervisor (CEO Node): Evaluates incoming user requests and routes them to dedicated specialized departments.
+2. Subgraph Departments:
+   - Research Department: Parallel web researcher & paper reviewer agents synthesized by a Research Lead.
+   - Content Department: Sequential Content Writer -> Content Editor workflow.
+   - Analysis Department: Sequential Data Analyst -> Strategy Advisor workflow.
+3. Nested StateGraph Compilation: Subgraphs are compiled and included as single nodes in the parent supervisor graph.
+"""
+
+from typing import Literal
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict, Annotated
+
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langchain.chat_models import init_chat_model
-from typing_extensions import TypedDict, Annotated
-from typing import Literal
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
 
+# Load environment configuration (API keys, settings)
 load_dotenv()
 
+# Initialize primary chat model
 model = init_chat_model(model_provider="google_genai", model="gemini-3.5-flash-lite")
 
 
-# ==========================================
+def extract_text(content) -> str:
+    """Safely extracts a plain string from LLM response content fields."""
+    if isinstance(content, str):
+        return content
+    elif (
+        isinstance(content, list) and len(content) > 0 and isinstance(content[0], dict)
+    ):
+        return content[0].get("text", str(content))
+    return str(content)
+
+
+# ============================================================================
 # Shared State Schema
-# ==========================================
+# ============================================================================
 
 
 class TeamState(TypedDict):
+    """Shared state schema used across both parent graph and department subgraphs.
+
+    Attributes:
+        messages: Message history log appended via add_messages operator.
+        final_answer: Polished final response produced by department leads.
+    """
+
     messages: Annotated[list[BaseMessage], add_messages]
     final_answer: str
 
 
-# ==========================================
-#       BUILD RESEARCH TEAM
-# ==========================================
+# ============================================================================
+# Department 1: Research Team Subgraph
+# ============================================================================
 
 
 def build_research_team() -> StateGraph:
+    """Builds the Research Department subgraph featuring parallel worker nodes.
+
+    Returns:
+        StateGraph: Uncompiled StateGraph for the Research Team.
+    """
 
     def web_researcher(state: TeamState) -> dict:
-        """
-        Searches the web for information
-        """
+        """Worker Node: Gathers broad web research and factual key points."""
         query = ""
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
-                query = msg.content
+                query = str(msg.content)
                 break
 
         response = model.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are a web researcher. Find key facts and data about the topic."
-                        "Provide 3-4 bullet points of findings. Be specific"
+                        "You are a web researcher. Find key facts and data about the topic. "
+                        "Provide 3-4 bullet points of findings. Be specific."
                     )
                 ),
                 HumanMessage(content=query),
             ]
         )
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="web_researcher",
-                    content=f"[Web Researcher]: {response.content[0].get('text')}",
+                    content=f"[Web Researcher]: {text}",
                 )
             ]
         }
 
     def paper_reviewer(state: TeamState) -> dict:
-        """
-        Reviews academic papers for key insights
-        """
+        """Worker Node: Reviews academic and technical literature for deep insights."""
         query = ""
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
-                query = msg.content
+                query = str(msg.content)
                 break
+
         response = model.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are an academic paper reviewer. Analyze the paper related to the topic in 2-3 sentences only"
+                        "You are an academic paper reviewer. Analyze academic perspective on the topic in 2-3 sentences."
                     )
                 ),
                 HumanMessage(content=query),
             ]
         )
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="paper_reviewer",
-                    content=f"[Paper Reviewer]: {response.content[0].get('text')}",
+                    content=f"[Paper Reviewer]: {text}",
                 )
             ]
         }
 
     def research_lead(state: TeamState) -> dict:
-        """
-        Synthesizes findings from both researchers
-        """
-        # Extract findings from preceding researcher AIMessages
+        """Lead Node: Synthesizes findings from both web researcher and paper reviewer."""
+        # Extract findings from preceding worker AIMessages
         findings = "\n\n".join(
             f"{msg.name or 'Researcher'}: {msg.content}"
             for msg in state["messages"]
@@ -100,115 +139,118 @@ def build_research_team() -> StateGraph:
 
         response = model.invoke(
             [
-                SystemMessage(content="""
-                You are a research lead. Synthesize the web researchers and paper reviewer's findings into a cohesive research brief"
-                Keep it to one short paragraph and highlight the key insights and their relevance to the original query.
-            """),
+                SystemMessage(
+                    content=(
+                        "You are a research lead. Synthesize the web researcher's and paper reviewer's findings "
+                        "into a cohesive research brief. Keep it to one short paragraph."
+                    )
+                ),
                 HumanMessage(
                     content=f"Here are the research findings to synthesize:\n\n{findings}"
                 ),
             ]
         )
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="research_lead",
-                    content=f"[Research Lead]: {response.content[0].get('text')}",
+                    content=f"[Research Lead]: {text}",
                 )
             ],
-            "final_answer": response.content[0].get("text"),
+            "final_answer": text,
         }
 
-    # ==========================================
-    # Build the Research Team Graph
-    # ==========================================
-
+    # Assemble Subgraph Nodes & Edges
     builder = StateGraph(TeamState)
 
     builder.add_node("web_researcher", web_researcher)
     builder.add_node("paper_reviewer", paper_reviewer)
     builder.add_node("research_lead", research_lead)
 
-    # Define edges
+    # Parallel dispatch from START to researchers
     builder.add_edge(START, "web_researcher")
     builder.add_edge(START, "paper_reviewer")
 
-    # Parallel paths merge at research_lead
+    # Fan-in convergence at research_lead
     builder.add_edge("web_researcher", "research_lead")
     builder.add_edge("paper_reviewer", "research_lead")
 
-    # Research lead signals done
+    # Complete team output
     builder.add_edge("research_lead", END)
 
     return builder
 
 
-# ==============================================
-# Build Content team (subgraph)
-# ==============================================
+# ============================================================================
+# Department 2: Content Team Subgraph
+# ============================================================================
 
 
-def build_contetnt_team() -> StateGraph:
-    """Build the content department subgraph"""
+def build_content_team() -> StateGraph:
+    """Builds the Content Department subgraph featuring sequential writing & editing.
+
+    Returns:
+        StateGraph: Uncompiled StateGraph for the Content Team.
+    """
 
     def content_writer(state: TeamState) -> dict:
-        """Writes content based on available context"""
-
-        findings = "\n\n".join(
-            f"{msg.name or 'Researcher'}: {msg.content}"
-            for msg in state["messages"]
-            if isinstance(msg, AIMessage)
-        )
+        """Worker Node: Drafts engaging article/blog post content based on prompt."""
+        query = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, HumanMessage):
+                query = str(msg.content)
+                break
 
         response = model.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are a content writer. Write a detailed, engaging blog post based on the research findings provided."
-                        "The tone should be accessible and informative, suitable for a general audience."
-                        "Structure your response with a catchy title, an introduction, body paragraphs, and a conclusion."
-                        "Expand on the key insights from the research and make them easy to understand."
+                        "You are a content writer. Write a detailed, engaging blog post based on the topic requested. "
+                        "Structure with title, introduction, body, and conclusion."
                     )
                 ),
-                HumanMessage(
-                    content=f"Here are the research findings to work with:\n\n{findings}"
-                ),
+                HumanMessage(content=query),
             ]
         )
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="content_writer",
-                    content=f"[Content Writer]: {response.content[0].get('text')}",
+                    content=f"[Content Writer]: {text}",
                 )
             ]
         }
 
     def content_editor(state: TeamState) -> dict:
-        """Edits and polishes the writer's output."""
+        """Editor Node: Polishes and proofreads writer draft for tone and quality."""
+        draft_text = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, AIMessage) and msg.name == "content_writer":
+                draft_text = str(msg.content)
+                break
+
         response = model.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are a content editor. Proofread and refine the blog post written by the content writer."
-                        "Check for clarity, coherence, grammar, spelling, and punctuation errors."
-                        "Ensure the tone is consistent and the message is clear and impactful."
-                        "Return the final polished version."
+                        "You are a content editor. Proofread and refine the blog post draft. "
+                        "Ensure tone consistency, perfect grammar, and strong readability."
                     )
                 ),
-                HumanMessage(
-                    content=f"Here is the blog post to edit:\n\n{state['messages']}"
-                ),
+                HumanMessage(content=f"Draft to edit:\n\n{draft_text}"),
             ]
         )
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="content_editor",
-                    content=f"[Content Editor]: {response.content[0].get('text')}",
+                    content=f"[Content Editor]: {text}",
                 )
             ],
-            "final_answer": response.content[0].get("text"),
+            "final_answer": text,
         }
 
     content_builder = StateGraph(TeamState)
@@ -222,55 +264,73 @@ def build_contetnt_team() -> StateGraph:
     return content_builder
 
 
+# ============================================================================
+# Department 3: Analysis Team Subgraph
+# ============================================================================
+
+
 def build_analysis_team() -> StateGraph:
-    """Build the analysis department subgraph"""
+    """Builds the Analysis Department subgraph featuring data analytics & strategic advisory.
+
+    Returns:
+        StateGraph: Uncompiled StateGraph for the Analysis Team.
+    """
 
     def data_analyst(state: TeamState) -> dict:
-        """Provide Data Driven Analysis"""
+        """Analyst Node: Extracts quantitative trends and analytical observations."""
+        query = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, HumanMessage):
+                query = str(msg.content)
+                break
+
         response = model.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are a data analyst. Your goal is to extract key insights and trends from the research findings provided. Provide 3-4 data driven insights"
+                        "You are a data analyst. Extract 3-4 data-driven insights and key analytical trends for the request."
                     )
                 ),
-                HumanMessage(
-                    content=f"Here are the research findings to analyze:\n\n{state['messages']}"
-                ),
+                HumanMessage(content=query),
             ]
         )
-
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="data_analyst",
-                    content=f"[Data Analyst]: {response.content[0].get('text')}",
+                    content=f"[Data Analyst]: {text}",
                 )
             ]
         }
 
     def strategy_advisor(state: TeamState) -> dict:
-        """Provides Strategic Recommendations"""
+        """Advisor Node: Translates data insights into actionable strategic advice."""
+        analysis_text = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, AIMessage) and msg.name == "data_analyst":
+                analysis_text = str(msg.content)
+                break
+
         response = model.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are a strategy advisor. Provide actionable strategic recommendations based on the data analyst's insights and the original query. Be specific and practicle"
+                        "You are a strategy advisor. Provide actionable strategic recommendations based on the analytical insights."
                     )
                 ),
-                HumanMessage(
-                    content=f"Here are the research findings to analyze:\n\n{state['messages']}"
-                ),
+                HumanMessage(content=f"Analytical findings:\n\n{analysis_text}"),
             ]
         )
+        text = extract_text(response.content)
         return {
             "messages": [
                 AIMessage(
                     name="strategy_advisor",
-                    content=f"[Strategy Advisor]: {response.content[0].get('text')}",
+                    content=f"[Strategy Advisor]: {text}",
                 )
             ],
-            "final_answer": response.content[0].get("text"),
+            "final_answer": text,
         }
 
     analysis_builder = StateGraph(TeamState)
@@ -284,79 +344,81 @@ def build_analysis_team() -> StateGraph:
     return analysis_builder
 
 
-# ============================================
-# Build Top-Level Supervisor (CEO as Parent graph)
-# ============================================
+# ============================================================================
+# Top-Level Parent Supervisor Graph (CEO Node)
+# ============================================================================
 
 
 def create_hierarchical_system():
-    """
-    Top-level supervisor that routes to departments subgraphs.
-    Each department is compiled subgraph added as a single node.
-    """
+    """Builds the top-level parent graph orchestrating compiled department subgraphs as nodes.
 
-    # Compile depratment subgraphs
+    Returns:
+        CompiledStateGraph: Complete hierarchical multi-agent graph ready for invocation.
+    """
+    # Compile department subgraphs into reusable runnable units
     research_team = build_research_team().compile()
-    content_team = build_contetnt_team().compile()
+    content_team = build_content_team().compile()
     analysis_team = build_analysis_team().compile()
 
-    # Create TOP-LEVELsupervisor (CEO)
+    # Routing Schema for Structured Decision Output
     class DepartmentRoute(BaseModel):
         department: Literal["research", "content", "analysis"] = Field(
-            description="Which department should handle this request"
+            description="Which department should handle this request."
         )
         reasoning: str = Field(
-            description="Brief reasoning for the department selection"
+            description="Brief reasoning for selecting this department."
         )
 
     router_llm = model.with_structured_output(DepartmentRoute)
 
     def ceo_supervisor(state: TeamState) -> dict:
-        """
-        CEO decides which department to route the request to.
-        """
+        """Parent Supervisor (CEO) Node: Analyzes user request and selects target department."""
+        query = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, HumanMessage):
+                query = str(msg.content)
+                break
 
         response = router_llm.invoke(
             [
                 SystemMessage(
                     content=(
-                        "You are the CEO. Decide which department should handle this request."
+                        "You are the CEO of a multi-agent organization. "
+                        "Determine which department (research, content, analysis) is best suited for the request."
                     )
                 ),
-                HumanMessage(content=f"Here is the request:\n\n{state['messages']}"),
+                HumanMessage(content=f"User Request: {query}"),
             ]
         )
         return {
             "messages": [
                 AIMessage(
                     name="ceo",
-                    content=f"[CEO]: Routing to {response.department} - {response.reasoning}",
+                    content=f"[CEO]: Routing to {response.department} department. Reasoning: {response.reasoning}",
                 )
             ]
         }
 
-    def route_to_department(state: TeamState) -> dict:
-        """
-        Routes the request to the appropriate department subgraph
-        """
-
+    def route_to_department(state: TeamState) -> str:
+        """Router Function: Evaluates CEO decision and returns node identifier."""
         last_ai = None
         for msg in reversed(state["messages"]):
             if isinstance(msg, AIMessage) and msg.name == "ceo":
                 last_ai = msg
                 break
 
-        if last_ai and "research" in last_ai.content.lower():
-            return "research_team"
-        elif last_ai and "content" in last_ai.content.lower():
-            return "content_team"
-        elif last_ai and "analysis" in last_ai.content.lower():
-            return "analysis_team"
-        else:
-            return "research_team"
+        if last_ai:
+            text = str(last_ai.content).lower()
+            if "research" in text:
+                return "research_team"
+            elif "content" in text:
+                return "content_team"
+            elif "analysis" in text:
+                return "analysis_team"
 
-    # Build parant graph - departments are compiled subgraphs as nodes
+        return "research_team"
 
+    # Build Parent Graph
     parent = StateGraph(TeamState)
 
     parent.add_node("ceo", ceo_supervisor)
@@ -369,9 +431,9 @@ def create_hierarchical_system():
         "ceo",
         route_to_department,
         {
-            "research_team": "research_team",  # Compiled subgraph
-            "content_team": "content_team",  # Complied subgraph
-            "analysis_team": "analysis_team",  # Complied subgraph
+            "research_team": "research_team",
+            "content_team": "content_team",
+            "analysis_team": "analysis_team",
         },
     )
     parent.add_edge("research_team", END)
@@ -381,34 +443,41 @@ def create_hierarchical_system():
     return parent.compile()
 
 
-def hierarchical_routing():
-    """Demo the full hierarchical system with routing"""
+# ============================================================================
+# Execution & Demonstration Entry Point
+# ============================================================================
 
+
+def hierarchical_routing():
+    """Runs a multi-query demonstration of the hierarchical multi-agent system."""
     system = create_hierarchical_system()
 
-    print("=" * 80)
-    print("HIERARCHICAL ROUTING SYSTEM")
-    print("=" * 80)
+    print(
+        "================================================================================"
+    )
+    print(" HIERARCHICAL MULTI-AGENT SYSTEM (CEO -> SUBGRAPHS) ")
+    print(
+        "================================================================================"
+    )
     queries = [
-        "What are the latest trends in LLM?",
-        "Write a blog post about RAG?",
-        "Should my startup invest in building AI features this year",
+        "What are the latest developments and technical trends in LLM fine-tuning?",
+        "Write an engaging blog post about RAG (Retrieval-Augmented Generation).",
+        "Should our startup invest in custom AI model training this year?",
     ]
 
     for query in queries:
-        print(f"\nQuery: {query}")
+        print(f"\nUser Query: {query}")
         print("-" * 80)
         result = system.invoke(
             {"messages": [HumanMessage(content=query)], "final_answer": ""}
         )
 
-        # Show the CEO routing decision
         for msg in result["messages"]:
-            if isinstance(msg, AIMessage):
-                print("\nCEO Routing:", msg.content)
+            if isinstance(msg, AIMessage) and msg.name == "ceo":
+                print(f"CEO Routing: {msg.content}")
 
-        # Print final answer
-        print(f"\nFinal Answer: {result['final_answer']}")
+        print(f"\nFinal Answer Output:\n{result['final_answer']}")
+        print("=" * 80)
 
 
 if __name__ == "__main__":
